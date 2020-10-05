@@ -1,9 +1,11 @@
 # Preliminaries ----
 library("readxl")
 library(plyr)
-library(ggplot2)
-library(reshape2)
 library(tidyverse)
+library(ggplot2)
+library(ggthemes)
+library(reshape2)
+library(caret)
 
 main_path = "/Users/paulmora/Documents/projects/polarized"
 raw_path = paste(main_path, "/00 Raw", sep="")
@@ -133,9 +135,11 @@ ggplot(data=average_seats, aes(x=year, y=Average_Seats,
   geom_line() + 
   ylab("Average Number of Seats") + xlab("Years") + 
   scale_color_manual(values=c("#0015BC", "#FF0000")) +
-  theme(text = element_text(size=20),
+  theme_tufte() +
+  theme(text = element_text(size=30),
         axis.text.x = element_text(angle=45, hjust=1)) +
-ggsave(paste(output_path, "seats.png", sep="/"))
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+ggsave(paste(output_path, "seats.png", sep="/"), bg="transparent")
 
 # Correlation between seats of the house and senate ----
 average_seats$combination = paste(average_seats$type,
@@ -162,18 +166,18 @@ ggheatmap = ggplot(melted_cormat, aes(Var2, Var1, fill = value))+
   scale_fill_gradient2(low="red", high="blue", mid="white", 
                        midpoint=0, limit=c(-1,1), space="Lab", 
                        name="Pearson\nCorrelation") +
-  theme_minimal()+ # minimal theme
+  theme_tufte()+ # minimal theme
   theme(axis.text.x = element_text(angle = 45, vjust = 1, 
                                    size = 12, hjust = 1))+
   coord_fixed()
 
 ggheatmap + 
-  geom_text(aes(Var2, Var1, label = value), color = "black", size = 5) +
+  geom_text(aes(Var2, Var1, label = value), color = "black", size = 8) +
   theme(
     axis.title.x = element_blank(),
-    axis.text.x = element_text(size=15, angle=45, hjust=1),
+    axis.text.x = element_text(size=20, angle=45, hjust=1),
     axis.title.y = element_blank(),
-    axis.text.y = element_text(size=15, hjust=1),
+    axis.text.y = element_text(size=20, hjust=1),
     panel.grid.major = element_blank(),
     panel.border = element_blank(),
     panel.background = element_blank(),
@@ -182,7 +186,7 @@ ggheatmap +
     legend.position = c(0.4, 0.7),
     legend.direction = "horizontal") +
   guides(fill = guide_colorbar(barwidth = 10, barheight = 2,
-                               label.theme = element_text(size=15),
+                               label.theme = element_text(size=20),
                                title.position = "top", title.hjust = 0.5))
 ggsave(paste(output_path, "correlation.png", sep="/"))
 
@@ -204,8 +208,9 @@ ggplot(data=number_decisions_per_year, aes(x=year, y=n,
   geom_point() + 
   geom_line() + 
   ylab("Number of Decisions made") + xlab("Years") +
-  scale_color_manual(values=c("#0015BC", "#FF0000")) +
-  theme(text = element_text(size=20),
+  scale_color_manual(values=c("#82B446", "#7846B4")) +
+  theme_tufte() +
+  theme(text = element_text(size=30),
         axis.text.x = element_text(angle=45, hjust=1))
 ggsave(paste(output_path, "num_decisions.png", sep="/"))
 
@@ -225,10 +230,83 @@ ggplot(data=avg_pol_data, aes(x=year, y=mean_pol,
   geom_point() + 
   geom_line() + 
   ylab("Average Polarization") + xlab("Years") +
-  scale_color_manual(values=c("#0015BC", "#FF0000")) +
-  theme(text = element_text(size=20),
+  scale_color_manual(values=c("#82B446", "#7846B4")) +
+  theme_tufte() +
+  theme(text = element_text(size=30),
         axis.text.x = element_text(angle=45, hjust=1))
 ggsave(paste(output_path, "avg_pol.png", sep="/"))
+
+"
+In order to see whether the polarization factor is dependent on which party
+is in power, we graph both lines in a separate plot while shading the background
+according the majority power of the respective institution - House/ Senate
+"
+
+data = average_seats %>% select(-one_of("combination"))
+wide_data = spread(data, party, Average_Seats) %>%
+  mutate(majority = if_else(Democrats < Republicans,
+                            "Democratic", "Republican"))
+avg_pol_data$majority = wide_data$majority
+
+ggplot(data=avg_pol_data, aes(x=year, y=mean_pol,
+                                group=type)) +
+  geom_point() + 
+  geom_line() + 
+  geom_tile(aes(fill=majority),
+            width = 1, height = Inf, alpha = 0.3) +
+  scale_fill_manual(values=c(Democratic="#0015BC", Republican="#FF0000")) +
+  ylab("Average Polarization") + xlab("Years") +
+  theme_tufte() +
+  facet_grid(.~ type) +
+  theme(text = element_text(size=30),
+        axis.text.x = element_text(angle=45, hjust=1))
+ggsave(paste(output_path, "avg_pol_majority.png", sep="/"))
+
+dummy_data = avg_pol_data %>% 
+  mutate(majority_dummy = if_else(majority=="Democratic", 1, 0)) %>%
+  select(majority_dummy, mean_pol )
+
+col_names = c("year", "Republican Dummy", "Average Polarization")
+colnames(dummy_data) = col_names
+cormat = round(cor(dummy_data[, -(1)]),2)
+# Get upper triangle of the correlation matrix
+get_upper_tri = function(cormat){
+  cormat[lower.tri(cormat)]<- NA
+  return(cormat)
+}
+upper_tri = get_upper_tri(cormat)
+
+# Melt the correlation matrix
+melted_cormat = melt(upper_tri, na.rm = TRUE)
+# Create a ggheatmap
+ggheatmap = ggplot(melted_cormat, aes(Var2, Var1, fill = value))+
+  geom_tile(color = "white")+
+  scale_fill_gradient2(low="red", high="blue", mid="white", 
+                       midpoint=0, limit=c(-1,1), space="Lab", 
+                       name="Pearson\nCorrelation") +
+  theme_tufte()+ # minimal theme
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 20, hjust = 1))+
+  coord_fixed()
+
+ggheatmap + 
+  geom_text(aes(Var2, Var1, label = value), color = "black", size = 10) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size=20, angle=45, hjust=1),
+    axis.title.y = element_blank(),
+    axis.text.y = element_text(size=20, hjust=1),
+    panel.grid.major = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.ticks = element_blank(),
+    legend.justification = c(1, 0),
+    legend.position = c(0.4, 0.7),
+    legend.direction = "horizontal") +
+  guides(fill = guide_colorbar(barwidth = 10, barheight = 2,
+                               label.theme = element_text(size=20),
+                               title.position = "top", title.hjust = 0.5))
+ggsave(paste(output_path, "correlation_pol_marjority.png", sep="/"))
 
 # Regression Line
 
@@ -239,10 +317,11 @@ statistics
 "
 avg_pol_data$type = str_to_title(avg_pol_data$type)
 ggplot(data=avg_pol_data, aes(x=year, y=mean_pol)) +
-  geom_point(colour = "grey") +
-  geom_smooth(method='lm', formula= y~x, color="black") +
+  geom_point(colour = "#7846B4") +
+  geom_smooth(method='lm', formula= y~x, color="#82B446") +
   ylab("Average Polarization") + xlab("Years") +
-  theme(text = element_text(size=20),
+  theme_tufte() +
+  theme(text = element_text(size=30),
         axis.text.x = element_text(angle=45, hjust=1))
 ggsave(paste(output_path, "regression_line.png", sep="/"))
 
@@ -268,17 +347,24 @@ long_party_unity = tidyr::gather(party_unity_data, party, unity,
                                  Democrats, Republican)
 
 # Plotting the results
+house_data = long_party_unity[long_party_unity$type=="House",]
+senate_data = long_party_unity[long_party_unity$type=="Senate",]
+
 ggplot(data=long_party_unity, aes(x=year, y=unity,
                                   group=interaction(party, type),
-                                  color=party, linetype=type)) +
+                                  color=party)) +
   geom_point() + 
-  geom_line() + 
+  geom_smooth(method='lm', formula= y~x) +
   ylab("Average Unity") + xlab("Years") + 
   scale_color_manual(values=c("#0015BC", "#FF0000")) +
-  theme(text = element_text(size=20),
-        axis.text.x = element_text(angle=45, hjust=1))
+  theme_tufte() +
+  theme(text = element_text(size=30),
+        axis.text.x = element_text(angle=45, hjust=1)) +
+  facet_grid(.~ type)
 ggsave(paste(output_path, "unity.png", sep="/"))
 
-lmodel <- lm(unity ~ year, data=long_party_unity)
+lmodel = lm(unity ~ year, data=house_data)
+summary(lmodel)
+lmodel = lm(unity ~ year, data=senate_data)
 summary(lmodel)
 
